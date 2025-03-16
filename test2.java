@@ -1,1 +1,1 @@
-test 2 java master
+test 2 java release
