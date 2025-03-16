@@ -1,41 +1,51 @@
 #!/bin/bash
 
 # Set variables
-REPO_URL="https://github.com/your-org/microservices-repo.git"
 RELEASE_BRANCH="release/25.03.100"
 TARGET_BRANCH="master"
+GITHUB_TOKEN='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'
 
-# Clean workspace to avoid conflicts
-rm -rf *
+# Navigate to Jenkins workspace where the repo is already checked out
+cd $WORKSPACE || exit 1
 
-# Clone the repository
-git clone --depth 1 --branch ${TARGET_BRANCH} ${REPO_URL} repo
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to clone repository! Check credentials and repo URL."
-    exit 1
-fi
-
-cd repo
-
-# Add remote and fetch the release branch
-git remote add origin ${REPO_URL}
+# Ensure we are on the latest commit
+git fetch origin ${TARGET_BRANCH}
 git fetch origin ${RELEASE_BRANCH}
 
 # Checkout master branch
-git checkout ${TARGET_BRANCH}
+git checkout ${TARGET_BRANCH} || { echo "❌ Failed to checkout master"; exit 1; }
 
 # Merge the release branch into master
 git merge --no-ff origin/${RELEASE_BRANCH} -m "Merging ${RELEASE_BRANCH} into ${TARGET_BRANCH}"
-if [ $? -ne 0 ]; then
-    echo "❌ Merge conflict! Please resolve manually."
-    exit 1
-fi
+MERGE_STATUS=$?
 
-# Push the merged changes to master
-git push origin ${TARGET_BRANCH}
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to push changes to master!"
-    exit 1
-fi
+if [ $MERGE_STATUS -ne 0 ]; then
+    echo "⚠️ Merge conflict detected! Creating a Merge Request instead..."
+    
+    # Abort merge to keep repo clean
+    git merge --abort
 
-echo "✅ Successfully merged ${RELEASE_BRANCH} into ${TARGET_BRANCH} and pushed to remote!"
+    # Create a pull request via GitHub API
+    PR_RESPONSE=$(curl -s -X POST -H "Authorization: token ${GITHUB_TOKEN}" \
+        -H "Accept: application/vnd.github.v3+json" \
+        https://api.github.com/repos/pratyushh1/Microservices/pulls \
+        -d "{
+            \"title\": \"Merge ${RELEASE_BRANCH} into ${TARGET_BRANCH}\",
+            \"head\": \"${RELEASE_BRANCH}\",
+            \"base\": \"${TARGET_BRANCH}\",
+            \"body\": \"Auto-created MR because merge failed due to conflicts.\"
+        }")
+
+    PR_URL=$(echo $PR_RESPONSE | grep -o '"html_url": "[^"]*' | cut -d '"' -f 4)
+
+    if [ -z "$PR_URL" ]; then
+        echo "❌ Failed to create a Merge Request. Please check manually!"
+        exit 1
+    else
+        echo "✅ Merge Request created successfully: $PR_URL"
+    fi
+else
+    # Push the merged changes if merge was successful
+    git push origin ${TARGET_BRANCH} || { echo "❌ Failed to push merged changes!"; exit 1; }
+    echo "✅ Successfully merged ${RELEASE_BRANCH} into ${TARGET_BRANCH} and pushed to remote!"
+fi
