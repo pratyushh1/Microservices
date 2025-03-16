@@ -1,2 +1,2 @@
-java test line 1
-  java test line 2
+java test release line 1
+  java test release line 2
