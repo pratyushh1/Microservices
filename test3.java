@@ -1,2 +1,1 @@
-test 3 master
-  
+test 3 release
