@@ -1,58 +1,41 @@
 #!/bin/bash
 
-# Input parameters from Jenkins job
-RELEASE_BRANCH="$1"
-ALL_MICROS="$2"
+# Set variables
+REPO_URL="https://github.com/your-org/microservices-repo.git"
+RELEASE_BRANCH="release/25.03.100"
+TARGET_BRANCH="master"
 
-# Define repo path (assuming all microservices are in a shared folder)
-REPO_BASE="github.com/pratyushh1/Microservices"
+# Clean workspace to avoid conflicts
+rm -rf *
 
-# Initialize lists
-MERGED_MRS=()
-NOT_MERGED_MRS=()
-
-# Fetch microservices having the release branch
-if [[ "$ALL_MICROS" == "true" ]]; then
-    MICROS=($(find "$REPO_BASE" -maxdepth 1 -type d | xargs -I {} basename {}))
-else
-    # If not "All micros", manually select them (modify logic as needed)
-    MICROS=("microservice-1" "microservice-2") # Placeholder: Replace with actual logic
+# Clone the repository
+git clone --depth 1 --branch ${TARGET_BRANCH} ${REPO_URL} repo
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to clone repository! Check credentials and repo URL."
+    exit 1
 fi
 
-echo "Processing the following microservices: ${MICROS[@]}"
+cd repo
 
-# Loop through each microservice
-for MICRO in "${MICROS[@]}"; do
-    cd "$REPO_BASE/$MICRO" || continue
-    
-    # Check if release branch exists in the repo
-    if git show-ref --verify --quiet "refs/heads/$RELEASE_BRANCH"; then
-        echo "Merging $RELEASE_BRANCH into master for $MICRO"
-        
-        git checkout master
-        git pull origin master
-        git merge --no-ff "$RELEASE_BRANCH" -m "Merging $RELEASE_BRANCH into master"
-        
-        if [[ $? -eq 0 ]]; then
-            git push origin master
-            echo "✅ Merged $MICRO"
-            MERGED_MRS+=("$MICRO")
-        else
-            echo "❌ Merge conflict in $MICRO. Manual intervention required."
-            NOT_MERGED_MRS+=("$MICRO")
-            git merge --abort
-        fi
-    else
-        echo "🚫 Release branch $RELEASE_BRANCH not found in $MICRO"
-        NOT_MERGED_MRS+=("$MICRO")
-    fi
-done
+# Add remote and fetch the release branch
+git remote add origin ${REPO_URL}
+git fetch origin ${RELEASE_BRANCH}
 
-# Summary of merged & not merged MRs
-echo "----------------------"
-echo "✅ Successfully Merged:"
-printf '%s\n' "${MERGED_MRS[@]}"
+# Checkout master branch
+git checkout ${TARGET_BRANCH}
 
-echo "----------------------"
-echo "❌ Not Merged (Check manually):"
-printf '%s\n' "${NOT_MERGED_MRS[@]}"
+# Merge the release branch into master
+git merge --no-ff origin/${RELEASE_BRANCH} -m "Merging ${RELEASE_BRANCH} into ${TARGET_BRANCH}"
+if [ $? -ne 0 ]; then
+    echo "❌ Merge conflict! Please resolve manually."
+    exit 1
+fi
+
+# Push the merged changes to master
+git push origin ${TARGET_BRANCH}
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to push changes to master!"
+    exit 1
+fi
+
+echo "✅ Successfully merged ${RELEASE_BRANCH} into ${TARGET_BRANCH} and pushed to remote!"
