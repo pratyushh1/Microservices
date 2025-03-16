@@ -1,1 +1,1 @@
-test 5 master
+test 5 release
